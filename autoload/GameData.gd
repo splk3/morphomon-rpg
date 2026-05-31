@@ -11,6 +11,7 @@ const STARTER_IDS: Array[StringName] = [&"plant_cactus", &"fire_mole", &"water_c
 
 var elements: Dictionary = {}      # StringName -> ElementType
 var moves: Dictionary = {}         # StringName -> MoveData
+var statuses: Dictionary = {}      # StringName -> StatusEffect
 var creatures: Dictionary = {}     # StringName -> CreatureSpecies
 var towns: Dictionary = {}         # StringName -> TownData
 var towns_ordered: Array[TownData] = []
@@ -23,6 +24,7 @@ var _type_chart: Dictionary = {}
 func _ready() -> void:
 	_build_elements()
 	_build_type_chart()
+	_build_statuses()
 	_build_moves()
 	_build_creatures()
 	_build_towns()
@@ -69,20 +71,21 @@ func effectiveness(attack_element: StringName, defender_element: StringName) -> 
 
 
 func _build_moves() -> void:
-	# A generic move plus one signature move per element.
+	# A generic move plus one signature move per element. Signature moves carry a
+	# small chance to inflict their element's status (see _build_statuses).
 	_add_move(&"tackle", "Tackle", &"normal", 18, 1.0, "A plain body slam.")
 	_add_move(&"scratch", "Scratch", &"normal", 16, 1.0, "Quick claw swipes.")
-	_add_move(&"flame_burst", "Flame Burst", &"fire", 26, 0.95, "A burst of fire.")
+	_add_move(&"flame_burst", "Flame Burst", &"fire", 26, 0.95, "A burst of fire.", &"burn", 0.2)
 	_add_move(&"aqua_jet", "Aqua Jet", &"water", 24, 1.0, "A fast jet of water.")
-	_add_move(&"spark", "Spark", &"electric", 24, 0.95, "A jolt of electricity.")
+	_add_move(&"spark", "Spark", &"electric", 24, 0.95, "A jolt of electricity.", &"paralyze", 0.2)
 	_add_move(&"rock_throw", "Rock Throw", &"earth", 25, 0.9, "Hurls heavy stones.")
-	_add_move(&"vine_lash", "Vine Lash", &"plant", 24, 0.95, "Whipping vines strike.")
+	_add_move(&"vine_lash", "Vine Lash", &"plant", 24, 0.95, "Whipping vines strike.", &"poison", 0.15)
 	_add_move(&"light_ray", "Light Ray", &"light", 26, 0.95, "A focused beam of light.")
 	_add_move(&"shadow_claw", "Shadow Claw", &"dark", 26, 0.95, "Claws wreathed in shadow.")
 	_add_move(&"star_shot", "Star Shot", &"astro", 27, 0.9, "Fires a shard of starlight.")
 
 
-func _add_move(id: StringName, name: String, element: StringName, power: int, acc: float, desc: String) -> void:
+func _add_move(id: StringName, name: String, element: StringName, power: int, acc: float, desc: String, status: StringName = &"", status_chance: float = 0.0) -> void:
 	var m := MoveData.new()
 	m.id = id
 	m.display_name = name
@@ -90,7 +93,60 @@ func _add_move(id: StringName, name: String, element: StringName, power: int, ac
 	m.power = power
 	m.accuracy = acc
 	m.description = desc
+	m.status = status
+	m.status_chance = status_chance
 	moves[id] = m
+
+
+# ---------------------------------------------------------------- statuses
+func _build_statuses() -> void:
+	# id -> [name, color, dot_fraction, skip_chance, duration, description]
+	var defs := {
+		&"poison": ["Poison", Color("8a5fb0"), 0.10, 0.0, 4, "Saps HP each turn."],
+		&"burn": ["Burn", Color("ef7a3a"), 0.08, 0.0, 4, "Smolders for damage each turn."],
+		&"paralyze": ["Paralysis", Color("f4d03f"), 0.0, 0.25, 4, "May lose a turn to static."],
+		&"sleep": ["Sleep", Color("6a7fb0"), 0.0, 1.0, 2, "Cannot act while asleep."],
+		&"freeze": ["Freeze", Color("9fd8ef"), 0.0, 0.5, 3, "May be frozen solid."],
+	}
+	for id in defs.keys():
+		var s := StatusEffect.new()
+		s.id = id
+		s.display_name = defs[id][0]
+		s.color = defs[id][1]
+		s.dot_fraction = defs[id][2]
+		s.skip_chance = defs[id][3]
+		s.duration = defs[id][4]
+		s.description = defs[id][5]
+		statuses[id] = s
+
+
+func get_status(id: StringName) -> StatusEffect:
+	return statuses.get(id, null)
+
+
+# ---------------------------------------------------------------- encounters
+## Rolls a weighted random encounter from an encounter table and returns
+## {species_id, level} (or {} when the table is empty). An encounter table is an
+## Array of Dictionaries: {species_id, level_min, level_max, weight}.
+func roll_encounter(table: Array) -> Dictionary:
+	if table.is_empty():
+		return {}
+	var total := 0.0
+	for entry in table:
+		total += float(entry.get("weight", 1.0))
+	if total <= 0.0:
+		return {}
+	var r := randf() * total
+	for entry in table:
+		r -= float(entry.get("weight", 1.0))
+		if r <= 0.0:
+			var lo := int(entry.get("level_min", 3))
+			var hi := int(entry.get("level_max", lo))
+			return {
+				"species_id": StringName(entry.get("species_id", "")),
+				"level": randi_range(mini(lo, hi), maxi(lo, hi)),
+			}
+	return {}
 
 
 func get_move(id: StringName) -> MoveData:

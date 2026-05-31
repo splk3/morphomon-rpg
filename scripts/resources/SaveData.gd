@@ -19,6 +19,12 @@ var defeated_headmasters: Array = []
 ## Discovered species ids (the Morphopedia).
 var morphopedia: Array = []
 
+## Story/cutscene progression flags (StringName-as-String -> Variant).
+var story_flags: Dictionary = {}
+## Last overworld position so the player resumes where they left off.
+## Shape: { "route": String, "x": int, "y": int }.
+var world_position: Dictionary = {}
+
 var play_seconds: float = 0.0
 var created_unix: int = 0
 
@@ -43,6 +49,8 @@ func to_dict() -> Dictionary:
 		"current_town": String(current_town),
 		"defeated_headmasters": defeated_headmasters,
 		"morphopedia": morphopedia,
+		"story_flags": story_flags.duplicate(),
+		"world_position": world_position.duplicate(),
 		"play_seconds": play_seconds,
 		"created_unix": created_unix,
 	}
@@ -61,6 +69,8 @@ static func from_dict(data: Dictionary) -> SaveData:
 	sd.current_town = StringName(data.get("current_town", "hometown"))
 	sd.defeated_headmasters = data.get("defeated_headmasters", [])
 	sd.morphopedia = data.get("morphopedia", [])
+	sd.story_flags = (data.get("story_flags", {}) as Dictionary).duplicate()
+	sd.world_position = (data.get("world_position", {}) as Dictionary).duplicate()
 	sd.play_seconds = float(data.get("play_seconds", 0.0))
 	sd.created_unix = int(data.get("created_unix", 0))
 	return sd

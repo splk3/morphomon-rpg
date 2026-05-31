@@ -28,6 +28,9 @@ var vsync_enabled: bool = true
 var custom_bindings: Dictionary = {}
 var gamepad_vibration: bool = true
 
+# --- Gameplay ---
+var autosave_enabled: bool = true
+
 
 func _ready() -> void:
 	load_settings()
@@ -118,6 +121,19 @@ func _event_from_dict(d: Dictionary) -> InputEvent:
 	return null
 
 
+# ----------------------------------------------------------- gamepad rumble
+## Starts gamepad vibration, honoring the [member gamepad_vibration] preference.
+## Magnitudes are 0..1; duration is in seconds. Safe to call when no pad exists.
+func rumble(weak: float = 0.5, strong: float = 0.5, duration: float = 0.2, device: int = 0) -> void:
+	if not gamepad_vibration:
+		return
+	Input.start_joy_vibration(device, clampf(weak, 0.0, 1.0), clampf(strong, 0.0, 1.0), duration)
+
+
+func stop_rumble(device: int = 0) -> void:
+	Input.stop_joy_vibration(device)
+
+
 # ------------------------------------------------------------ persistence
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
@@ -129,6 +145,7 @@ func save_settings() -> void:
 	cfg.set_value("graphics", "vsync", vsync_enabled)
 	cfg.set_value("controls", "bindings", custom_bindings)
 	cfg.set_value("controls", "gamepad_vibration", gamepad_vibration)
+	cfg.set_value("gameplay", "autosave", autosave_enabled)
 	cfg.save(CONFIG_PATH)
 
 
@@ -144,4 +161,5 @@ func load_settings() -> void:
 	vsync_enabled = cfg.get_value("graphics", "vsync", vsync_enabled)
 	custom_bindings = cfg.get_value("controls", "bindings", {})
 	gamepad_vibration = cfg.get_value("controls", "gamepad_vibration", true)
+	autosave_enabled = cfg.get_value("gameplay", "autosave", true)
 	apply_bindings()

@@ -167,7 +167,10 @@ func _choose_attack() -> void:
 		var move := GameData.get_move(move_id)
 		if move == null:
 			continue
-		_add_action(move.display_name, _action_attack.bind(move))
+		var label := move.display_name
+		if _player.essence != null:
+			label = "%s  PP %d/%d" % [move.display_name, _player.essence.pp_for(move.id), move.max_pp]
+		_add_action(label, _action_attack.bind(move))
 	_add_action("Back", _player_choice)
 
 
@@ -190,28 +193,49 @@ func _choose_transform() -> void:
 func _action_attack(move: MoveData) -> void:
 	if _busy:
 		return
-	await _do_player_move(move)
-	if _check_end():
+	if _player.essence != null and not _player.essence.spend_pp(move.id):
+		_busy = true
+		_clear_actions()
+		await _say("But there's no energy left!")
+		_busy = false
+		_player_choice()
 		return
-	await _enemy_turn()
-	if _check_end():
+	var player_ended := await _do_player_move(move)
+	if player_ended:
+		return
+	var enemy_ended := await _enemy_turn()
+	if enemy_ended:
 		return
 	_player_choice()
 
 
-func _do_player_move(move: MoveData) -> void:
+func _do_player_move(move: MoveData) -> bool:
 	_busy = true
 	_clear_actions()
+	if _player.should_skip_turn():
+		await _say(_skip_status_message(_player))
+		var skipped_end := await _tick_end_status(_player)
+		if not skipped_end:
+			_busy = false
+		return skipped_end
 	if randf() > move.accuracy:
 		await _say("%s used %s... but it missed!" % [_player.display_name(), move.display_name])
-		_busy = false
-		return
+		var missed_end := await _tick_end_status(_player)
+		if not missed_end:
+			_busy = false
+		return missed_end
 	var dmg := _player.damage_against(move, _enemy)
 	_enemy.take_damage(dmg)
 	AudioManager.play_sfx(&"hit")
 	_refresh_status()
 	await _say("%s used %s! %s" % [_player.display_name(), move.display_name, _effect_text(move.element, _enemy)])
-	_busy = false
+	await _try_apply_status(move, _enemy)
+	var turn_end := await _tick_end_status(_player)
+	if not turn_end:
+		turn_end = _check_end()
+	if not turn_end:
+		_busy = false
+	return turn_end
 
 
 func _action_transform(index: int) -> void:
@@ -220,8 +244,8 @@ func _action_transform(index: int) -> void:
 	_refresh_status()
 	AudioManager.play_sfx(&"transform")
 	await _say("Your Morphomon transforms into %s!" % _player.display_name())
-	await _enemy_turn()
-	if _check_end():
+	var enemy_ended := await _enemy_turn()
+	if enemy_ended:
 		return
 	_player_choice()
 
@@ -241,8 +265,8 @@ func _action_scan() -> void:
 		return
 	await _say("Scan failed! %s broke free." % _enemy.display_name())
 	_busy = false
-	await _enemy_turn()
-	if _check_end():
+	var enemy_ended := await _enemy_turn()
+	if enemy_ended:
 		return
 	_player_choice()
 
@@ -257,28 +281,43 @@ func _action_run() -> void:
 		return
 	await _say("Couldn't escape!")
 	_busy = false
-	await _enemy_turn()
-	if _check_end():
+	var enemy_ended := await _enemy_turn()
+	if enemy_ended:
 		return
 	_player_choice()
 
 
-func _enemy_turn() -> void:
+func _enemy_turn() -> bool:
 	_busy = true
 	if _enemy.is_fainted():
 		_busy = false
-		return
+		return false
+	if _enemy.should_skip_turn():
+		await _say(_skip_status_message(_enemy))
+		var skipped_end := await _tick_end_status(_enemy)
+		if not skipped_end:
+			_busy = false
+		return skipped_end
 	var move := GameData.get_move(_enemy.species.moves[randi() % _enemy.species.moves.size()])
 	if randf() > move.accuracy:
 		await _say("%s used %s... but it missed!" % [_enemy.display_name(), move.display_name])
-		_busy = false
-		return
+		var missed_end := await _tick_end_status(_enemy)
+		if not missed_end:
+			_busy = false
+		return missed_end
 	var dmg := _enemy.damage_against(move, _player)
 	_player.take_damage(dmg)
+	Settings.rumble(0.4, 0.6, 0.15)
 	AudioManager.play_sfx(&"hit")
 	_refresh_status()
 	await _say("%s used %s! %s" % [_enemy.display_name(), move.display_name, _effect_text(move.element, _player)])
-	_busy = false
+	await _try_apply_status(move, _player)
+	var turn_end := await _tick_end_status(_enemy)
+	if not turn_end:
+		turn_end = _check_end()
+	if not turn_end:
+		_busy = false
+	return turn_end
 
 
 func _effect_text(element: StringName, target: Combatant) -> String:
@@ -288,6 +327,48 @@ func _effect_text(element: StringName, target: Combatant) -> String:
 	if mult <= 0.5:
 		return "It's not very effective..."
 	return ""
+
+
+func _try_apply_status(move: MoveData, target: Combatant) -> void:
+	if move.status == &"" or move.status_chance <= 0.0 or randf() > move.status_chance:
+		return
+	var status_effect: StatusEffect = GameData.get_status(move.status)
+	if status_effect == null:
+		return
+	if target.apply_status(move.status):
+		await _say("%s was afflicted with %s!" % [target.display_name(), status_effect.display_name])
+
+
+func _tick_end_status(combatant: Combatant) -> bool:
+	if not combatant.has_status():
+		return false
+	var status_id := combatant.status
+	var status_effect: StatusEffect = GameData.get_status(status_id)
+	var dot := combatant.tick_status()
+	if dot <= 0:
+		return false
+	if combatant == _player:
+		Settings.rumble(0.4, 0.6, 0.15)
+	var status_name := String(status_id)
+	if status_effect != null:
+		status_name = status_effect.display_name.to_lower()
+	await _say("%s is hurt by %s!" % [combatant.display_name(), status_name])
+	_refresh_status()
+	return _check_end()
+
+
+func _skip_status_message(combatant: Combatant) -> String:
+	var status_effect: StatusEffect = GameData.get_status(combatant.status)
+	var status_name := String(combatant.status)
+	if status_effect != null:
+		status_name = status_effect.display_name
+	match combatant.status:
+		&"paralyze":
+			return "%s is paralyzed! It can't move!" % combatant.display_name()
+		&"sleep":
+			return "%s is fast asleep!" % combatant.display_name()
+		_:
+			return "%s is affected by %s! It can't move!" % [combatant.display_name(), status_name]
 
 
 # ---------------------------------------------------------------- endings

@@ -67,6 +67,12 @@ func save() -> bool:
 	return SaveManager.save_to_slot(current_slot, data)
 
 
+func autosave() -> bool:
+	if not Settings.autosave_enabled:
+		return false
+	return save()
+
+
 ## Grant the chosen starter essence (plant_cactus / fire_mole / water_crane).
 func choose_starter(species_id: StringName) -> bool:
 	if data == null or not GameData.STARTER_IDS.has(species_id):
@@ -79,6 +85,8 @@ func choose_starter(species_id: StringName) -> bool:
 	data.starter_chosen = true
 	data.record_discovery(species_id)
 	morphopedia_updated.emit()
+	# Checkpoint autosave after locking in the starter choice.
+	autosave()
 	return true
 
 
@@ -99,6 +107,8 @@ func attempt_scan(species_id: StringName, creature_level: int, hp_ratio: float) 
 		_store_scanned_essence(species_id, creature_level)
 		data.record_discovery(species_id)
 		morphopedia_updated.emit()
+		# Checkpoint autosave after a successful scan capture.
+		autosave()
 	return success
 
 
@@ -113,3 +123,38 @@ func _store_scanned_essence(species_id: StringName, level: int) -> void:
 func heal_team() -> void:
 	if data != null:
 		data.morphomon.heal_all()
+
+
+# ---------------------------------------------------------------- story flags
+## Sets a story/cutscene progression flag.
+func set_flag(flag: StringName, value: Variant = true) -> void:
+	if data != null:
+		data.story_flags[String(flag)] = value
+
+
+func get_flag(flag: StringName, default: Variant = false) -> Variant:
+	if data == null:
+		return default
+	return data.story_flags.get(String(flag), default)
+
+
+func has_flag(flag: StringName) -> bool:
+	return data != null and data.story_flags.has(String(flag))
+
+
+# ------------------------------------------------------------- world position
+## Persists the player's last overworld location so it can be resumed.
+func set_world_position(route_id: StringName, cell: Vector2i) -> void:
+	if data != null:
+		data.world_position = {"route": String(route_id), "x": cell.x, "y": cell.y}
+
+
+## Returns { route: StringName, cell: Vector2i } or {} when none is stored.
+func get_world_position() -> Dictionary:
+	if data == null or data.world_position.is_empty():
+		return {}
+	var wp := data.world_position
+	return {
+		"route": StringName(wp.get("route", "")),
+		"cell": Vector2i(int(wp.get("x", 0)), int(wp.get("y", 0))),
+	}

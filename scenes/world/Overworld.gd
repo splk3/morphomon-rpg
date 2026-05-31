@@ -264,12 +264,16 @@ func _try_interact() -> void:
 
 # ---------------------------------------------------------------- narration
 func _intro_if_needed() -> void:
-	if GameState.data.play_seconds < 2.0:
-		_say([
-			{"speaker": "Mom", "text": "Happy first day of school, %s! Here's your very own Morphomon." % GameState.data.player_name},
-			{"speaker": "Mom", "text": "Scan creatures in the wild, then transform your Morphomon to battle. Good luck!"},
-			"Walk into the tall grass, pond or cave to find creatures. Press Interact by the school to use its services.",
-		])
+	if GameState.get_flag(&"intro_seen"):
+		return
+	var intro := preload("res://scenes/ui/cutscenes/IntroCutscene.tscn").instantiate()
+	add_child(intro)
+	_busy = true
+	intro.finished.connect(func() -> void:
+		_busy = false
+		intro.queue_free()
+	, CONNECT_ONE_SHOT)
+	intro.play()
 
 
 func _say(lines: Array) -> void:

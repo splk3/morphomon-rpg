@@ -101,3 +101,73 @@ func _run() -> void:
 	print("== Defensive guards ==")
 	_check(Combatant.from_essence(null) == null, "from_essence(null) returns null safely")
 	_check(Combatant.from_species(&"not_real", 5).species == null, "invalid species id yields null species")
+
+	print("== Status effects ==")
+	_check(GameData.statuses.size() >= 5, "status registry populated")
+	_check(GameData.get_status(&"burn") != null, "burn status defined")
+	_check(GameData.get_status(&"not_a_status") == null, "unknown status is null")
+	var poisoned := Combatant.from_species(&"normal_pup", 10)
+	_check(poisoned.apply_status(&"poison"), "status applies to a clean combatant")
+	_check(not poisoned.apply_status(&"burn"), "second status is rejected while afflicted")
+	var hp_before := poisoned.hp
+	var dot := poisoned.tick_status()
+	_check(dot > 0 and poisoned.hp == hp_before - dot, "poison deals end-of-turn damage")
+	for i in 10:
+		poisoned.tick_status()
+	_check(not poisoned.has_status(), "status clears after its duration")
+
+	print("== Move PP / status fields ==")
+	var fb := GameData.get_move(&"flame_burst")
+	_check(fb.max_pp > 0, "moves have positive max PP")
+	_check(fb.status == &"burn" and fb.status_chance > 0.0, "flame_burst can burn")
+	var pe := Essence.new(&"fire_mole", 5)
+	pe.ensure_pp()
+	var start_pp := pe.pp_for(&"flame_burst")
+	_check(start_pp > 0, "essence initializes PP for known moves")
+	_check(pe.spend_pp(&"flame_burst") and pe.pp_for(&"flame_burst") == start_pp - 1, "spending PP decrements it")
+	pe.restore_pp()
+	_check(pe.pp_for(&"flame_burst") == start_pp, "restore_pp refills PP")
+
+	print("== Encounter tables ==")
+	var table := [
+		{"species_id": "normal_pup", "level_min": 3, "level_max": 6, "weight": 1.0},
+		{"species_id": "fire_mole", "level_min": 4, "level_max": 4, "weight": 2.0},
+	]
+	var enc := GameData.roll_encounter(table)
+	_check(enc.has("species_id") and GameData.get_creature(enc["species_id"]) != null, "encounter rolls a real species")
+	_check(int(enc["level"]) >= 3 and int(enc["level"]) <= 6, "encounter level within table bounds")
+	_check(GameData.roll_encounter([]).is_empty(), "empty table yields no encounter")
+
+	print("== Story flags & world position ==")
+	GameState.set_flag(&"intro_seen", true)
+	_check(bool(GameState.get_flag(&"intro_seen")), "story flag set and read")
+	_check(not bool(GameState.get_flag(&"never_set")), "unset flag defaults false")
+	GameState.set_world_position(&"route_01", Vector2i(7, 9))
+	var wp := GameState.get_world_position()
+	_check(wp.get("route", &"") == &"route_01" and wp.get("cell") == Vector2i(7, 9), "world position persists in state")
+
+	print("== Extended save round-trip ==")
+	var sd2 := GameState.data
+	var redict := sd2.to_dict()
+	var re2 := SaveData.from_dict(redict)
+	_check(re2.story_flags.get("intro_seen", false) == true, "save keeps story flags")
+	_check(re2.world_position.get("route", "") == "route_01", "save keeps world position")
+	var e_pp := Essence.new(&"electric_eel", 6)
+	e_pp.ensure_pp()
+	e_pp.status = &"paralyze"
+	e_pp.status_turns = 3
+	var e_round := Essence.from_dict(e_pp.to_dict())
+	_check(e_round.pp.size() == e_pp.pp.size(), "save keeps essence PP")
+	_check(e_round.status == e_pp.status, "save keeps essence status")
+
+	print("== Rumble API ==")
+	Settings.rumble(0.4, 0.6, 0.1)
+	Settings.stop_rumble()
+	_check(true, "rumble API callable without error")
+
+	print("== Autosave ==")
+	var _autosave_prev := Settings.autosave_enabled
+	Settings.autosave_enabled = false
+	_check(not GameState.autosave(), "autosave() is a no-op when disabled")
+	Settings.autosave_enabled = _autosave_prev
+

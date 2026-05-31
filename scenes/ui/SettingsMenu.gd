@@ -55,6 +55,9 @@ func _build() -> void:
 	# --- Controls ---
 	col.add_child(UI.make_label("Controls", 24))
 	_vibration = _add_toggle(col, "Gamepad Vibration")
+	var remap := UI.make_button("Customize Controls")
+	remap.pressed.connect(func() -> void: get_tree().change_scene_to_file(Routes.REMAP))
+	col.add_child(remap)
 	var hint := UI.make_label(
 		"Move: WASD / Arrows / D-Pad / Left Stick   •   Interact: E / A   •   Cancel: Esc / B   •   Menu: Tab / Start",
 		14)

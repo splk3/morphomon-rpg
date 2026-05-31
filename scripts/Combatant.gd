@@ -9,6 +9,9 @@ var max_hp: int
 var hp: int
 ## Optional link back to the player's stored essence so XP/HP persist.
 var essence: Essence = null
+## Active status condition (mirrors the essence when one is linked).
+var status: StringName = &""
+var status_turns: int = 0
 
 
 static func from_species(species_id: StringName, lvl: int) -> Combatant:
@@ -30,6 +33,8 @@ static func from_essence(e: Essence) -> Combatant:
 	c.max_hp = e.max_hp()
 	c.hp = clampi(e.current_hp, 0, c.max_hp)
 	c.essence = e
+	c.status = e.status
+	c.status_turns = e.status_turns
 	return c
 
 
@@ -49,6 +54,63 @@ func take_damage(amount: int) -> void:
 
 func display_name() -> String:
 	return species.display_name if species != null else "???"
+
+
+# ---------------------------------------------------------------- status
+## Inflicts [param status_id] if the combatant is not already afflicted.
+## Returns true when newly applied.
+func apply_status(status_id: StringName) -> bool:
+	if status_id == &"" or status != &"":
+		return false
+	var s: StatusEffect = GameData.get_status(status_id)
+	if s == null:
+		return false
+	status = status_id
+	status_turns = s.duration
+	_sync_status_to_essence()
+	return true
+
+
+func clear_status() -> void:
+	status = &""
+	status_turns = 0
+	_sync_status_to_essence()
+
+
+func has_status() -> bool:
+	return status != &""
+
+
+## Whether the active status causes this combatant to lose its action this turn.
+func should_skip_turn() -> bool:
+	if status == &"":
+		return false
+	var s: StatusEffect = GameData.get_status(status)
+	return s != null and s.skip_chance > 0.0 and randf() < s.skip_chance
+
+
+## Applies end-of-turn status damage and counts down its duration. Returns the
+## damage dealt (0 if none). Clears the status when its turns run out.
+func tick_status() -> int:
+	if status == &"":
+		return 0
+	var s: StatusEffect = GameData.get_status(status)
+	var dmg := 0
+	if s != null and s.dot_fraction > 0.0:
+		dmg = maxi(1, int(round(float(max_hp) * s.dot_fraction)))
+		take_damage(dmg)
+	status_turns -= 1
+	if status_turns <= 0:
+		clear_status()
+	else:
+		_sync_status_to_essence()
+	return dmg
+
+
+func _sync_status_to_essence() -> void:
+	if essence != null:
+		essence.status = status
+		essence.status_turns = status_turns
 
 
 ## Computes damage for [param move] used against [param target].

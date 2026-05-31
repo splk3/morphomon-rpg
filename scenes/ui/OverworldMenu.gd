@@ -7,9 +7,12 @@ enum Kind { MAIN, TOWN }
 
 signal closed
 
+const MORPHOPEDIA_MENU_SCENE := preload("res://scenes/ui/MorphopediaMenu.tscn")
+
 var kind: Kind = Kind.MAIN
 var _root: Control
 var _content: VBoxContainer
+var _morphopedia_menu: MorphopediaMenu
 
 
 func _ready() -> void:
@@ -39,6 +42,8 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _morphopedia_menu != null:
+		return
 	if event.is_action_pressed("cancel") or event.is_action_pressed("open_menu"):
 		get_viewport().set_input_as_handled()
 		_close()
@@ -93,18 +98,16 @@ func _show_party() -> void:
 
 func _show_morphopedia() -> void:
 	_clear()
-	_title("Morphopedia")
-	_content.add_child(UI.make_label(
-		"Discovered %d / %d species" % [GameState.data.morphopedia.size(), GameData.creatures.size()], 18))
-	var grid := GridContainer.new()
-	grid.columns = 2
-	_content.add_child(grid)
-	for id in GameState.data.morphopedia:
-		var species := GameData.get_creature(StringName(id))
-		if species:
-			var el: ElementType = GameData.elements[species.element]
-			grid.add_child(UI.make_label("• %s (%s)" % [species.display_name, el.display_name], 16))
-	_button("Back", _show_main_root, true)
+	_morphopedia_menu = MORPHOPEDIA_MENU_SCENE.instantiate() as MorphopediaMenu
+	_morphopedia_menu.closed.connect(_on_morphopedia_closed)
+	add_child(_morphopedia_menu)
+
+
+func _on_morphopedia_closed() -> void:
+	if _morphopedia_menu != null:
+		_morphopedia_menu.queue_free()
+		_morphopedia_menu = null
+	_show_main_root()
 
 
 func _save_game() -> void:

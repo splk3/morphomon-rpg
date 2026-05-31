@@ -59,6 +59,8 @@ func first_usable_index() -> int:
 func heal_all() -> void:
 	for e in essences:
 		e.current_hp = e.max_hp()
+		e.clear_status()
+		e.restore_pp()
 
 
 func to_dict() -> Dictionary:
