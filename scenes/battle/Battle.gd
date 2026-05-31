@@ -28,8 +28,20 @@ func _ready() -> void:
 	UI.fill_background(self, Color("23304a"))
 	AudioManager.play_music(&"battle")
 	_setup_combatants()
+	if not _is_valid_battle():
+		# Defensive: never crash on a missing essence or corrupt species id.
+		push_warning("Battle aborted: invalid combatant setup.")
+		GameState.pending_battle = {}
+		GameState.heal_team()
+		get_tree().change_scene_to_file(Routes.OVERWORLD)
+		return
 	_build_ui()
 	_intro()
+
+
+func _is_valid_battle() -> bool:
+	return _player != null and _player.species != null \
+		and _enemy != null and _enemy.species != null
 
 
 func _setup_combatants() -> void:
@@ -42,13 +54,14 @@ func _setup_combatants() -> void:
 			GameState.data.morphomon.active_index = idx
 			active = GameState.data.morphomon.active_essence()
 	_player = Combatant.from_essence(active)
-
 	if _wild:
 		_enemy = Combatant.from_species(cfg.get("species_id", &""), cfg.get("level", 5))
 	else:
 		_trainer_name = cfg.get("trainer_name", "Trainer")
 		_enemy_team = cfg.get("trainer_team", [])
 		_enemy_team_index = 0
+		if _enemy_team.is_empty():
+			return
 		var first: Dictionary = _enemy_team[0]
 		_enemy = Combatant.from_species(first["species_id"], first["level"])
 

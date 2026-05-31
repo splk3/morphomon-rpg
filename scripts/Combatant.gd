@@ -21,6 +21,8 @@ static func from_species(species_id: StringName, lvl: int) -> Combatant:
 
 
 static func from_essence(e: Essence) -> Combatant:
+	if e == null:
+		return null
 	e.ensure_full_hp()
 	var c := Combatant.new()
 	c.species = e.species()

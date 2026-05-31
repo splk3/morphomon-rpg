@@ -97,3 +97,7 @@ func _run() -> void:
 	_check(dmg >= 1, "fire move deals damage to plant")
 	dfn.take_damage(dfn.max_hp)
 	_check(dfn.is_fainted(), "combatant faints at 0 hp")
+
+	print("== Defensive guards ==")
+	_check(Combatant.from_essence(null) == null, "from_essence(null) returns null safely")
+	_check(Combatant.from_species(&"not_real", 5).species == null, "invalid species id yields null species")
