@@ -1,0 +1,39 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Morphomon RPG"
+config/description="A traditional top-down, turn-based RPG. Scan creatures, transform your Morphomon, and adventure across nine elemental towns."
+run/main_scene="res://scenes/ui/TitleScreen.tscn"
+config/features=PackedStringArray("4.5", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+InputSetup="*res://autoload/InputSetup.gd"
+GameData="*res://autoload/GameData.gd"
+AudioManager="*res://autoload/AudioManager.gd"
+Settings="*res://autoload/Settings.gd"
+SaveManager="*res://autoload/SaveManager.gd"
+GameState="*res://autoload/GameState.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.17, 0.14, 0.25, 1)
