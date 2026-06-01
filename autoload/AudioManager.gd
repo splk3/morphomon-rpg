@@ -95,6 +95,11 @@ func _build_sfx(name: StringName) -> AudioStreamWAV:
 			return _build_melody([["C4", 1], ["E4", 1], ["G4", 1], ["C5", 1]], 0.05, false)
 		"transform":
 			return _build_melody([["C4", 1], ["G4", 1], ["E5", 1], ["G5", 1]], 0.06, false)
+		"battle_start":
+			# Rising fanfare that plays as the screen wipes into a battle.
+			return _build_melody(
+				[["C4", 1], ["E4", 1], ["G4", 1], ["C5", 1], ["E5", 2], ["G5", 2]],
+				0.07, false)
 		"victory":
 			return _build_melody(TRACKS["victory"], 0.12, false)
 		_:

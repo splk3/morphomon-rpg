@@ -73,14 +73,15 @@ func _process(delta: float) -> void:
 		return
 
 	var dir := Vector2i.ZERO
-	if Input.is_action_pressed("move_up"):
-		dir = Vector2i(0, -1)
-	elif Input.is_action_pressed("move_down"):
-		dir = Vector2i(0, 1)
-	elif Input.is_action_pressed("move_left"):
-		dir = Vector2i(-1, 0)
-	elif Input.is_action_pressed("move_right"):
-		dir = Vector2i(1, 0)
+	# Dominant-axis selection so analog-stick diagonals map to one grid step and
+	# the left stick stays reliable (the d-pad keeps working unchanged).
+	var ix := Input.get_axis("move_left", "move_right")
+	var iy := Input.get_axis("move_up", "move_down")
+	if absf(ix) > absf(iy):
+		if absf(ix) > 0.0:
+			dir = Vector2i(signi(ix), 0)
+	elif absf(iy) > 0.0:
+		dir = Vector2i(0, signi(iy))
 	if dir != Vector2i.ZERO:
 		_try_move(dir)
 

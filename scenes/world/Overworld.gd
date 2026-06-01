@@ -7,6 +7,8 @@ const MAP_W := 34
 const MAP_H := 24
 const ENCOUNTER_CHANCE := 0.14
 const MOVE_TIME := 0.12
+## Identifies the procedural overworld when persisting the player's position.
+const WORLD_ROUTE := &"overworld"
 
 enum Terrain { GROUND, PATH, GRASS, WATER, CAVE, TREE, TOWN }
 
@@ -47,6 +49,7 @@ func _ready() -> void:
 		return
 	_generate_map()
 	_build_world()
+	_restore_player_cell()
 	_player_pixel = _cell_to_pixel(_player_cell)
 	_player_sprite.position = _player_pixel
 	AudioManager.play_music(&"town")
@@ -149,6 +152,21 @@ func _cell_to_pixel(cell: Vector2i) -> Vector2:
 	return Vector2(cell.x * TILE + TILE / 2.0, cell.y * TILE + TILE / 2.0)
 
 
+## Resume on the tile the player last stood on (e.g. after a battle) instead of
+## restarting at the map entrance.
+func _restore_player_cell() -> void:
+	var wp := GameState.get_world_position()
+	if wp.is_empty() or String(wp.get("route", "")) != String(WORLD_ROUTE):
+		return
+	var cell: Vector2i = wp.get("cell", _player_cell)
+	if cell.x >= 0 and cell.y >= 0 and cell.x < MAP_W and cell.y < MAP_H and not _is_blocked(cell):
+		_player_cell = cell
+
+
+func _save_position() -> void:
+	GameState.set_world_position(WORLD_ROUTE, _player_cell)
+
+
 # ---------------------------------------------------------------- input/move
 func _process(delta: float) -> void:
 	if _moving:
@@ -165,24 +183,33 @@ func _process(delta: float) -> void:
 	if _busy or _menu_open or (_dialogue and _dialogue.is_active()):
 		return
 
-	if Input.is_action_just_pressed("open_menu"):
-		_open_menu()
-		return
-	if Input.is_action_just_pressed("interact"):
-		_try_interact()
-		return
-
 	var dir := Vector2i.ZERO
-	if Input.is_action_pressed("move_up"):
-		dir = Vector2i(0, -1)
-	elif Input.is_action_pressed("move_down"):
-		dir = Vector2i(0, 1)
-	elif Input.is_action_pressed("move_left"):
-		dir = Vector2i(-1, 0)
-	elif Input.is_action_pressed("move_right"):
-		dir = Vector2i(1, 0)
+	# Pick the dominant axis so analog-stick diagonals resolve to a single grid
+	# step. Polling per-action with elif made the left stick unreliable: a slight
+	# vertical lean while pushing sideways would always win. get_axis() already
+	# applies each action's deadzone, so the d-pad (digital) still works exactly.
+	var ix := Input.get_axis("move_left", "move_right")
+	var iy := Input.get_axis("move_up", "move_down")
+	if absf(ix) > absf(iy):
+		if absf(ix) > 0.0:
+			dir = Vector2i(signi(ix), 0)
+	elif absf(iy) > 0.0:
+		dir = Vector2i(0, signi(iy))
 	if dir != Vector2i.ZERO:
 		_try_move(dir)
+
+
+# Interact/menu use events (not polling) so that a dialogue or overlay that
+# consumes the press can't be re-triggered later in the same frame.
+func _unhandled_input(event: InputEvent) -> void:
+	if _moving or _busy or _menu_open or (_dialogue and _dialogue.is_active()):
+		return
+	if event.is_action_pressed("open_menu"):
+		get_viewport().set_input_as_handled()
+		_open_menu()
+	elif event.is_action_pressed("interact"):
+		get_viewport().set_input_as_handled()
+		_try_interact()
 
 
 func _try_move(dir: Vector2i) -> void:
@@ -203,6 +230,7 @@ func _try_move(dir: Vector2i) -> void:
 
 
 func _on_arrived() -> void:
+	_save_position()
 	var t := _terrain_at(_player_cell)
 	if t == Terrain.GRASS or t == Terrain.WATER or t == Terrain.CAVE:
 		if randf() < ENCOUNTER_CHANCE:
@@ -245,6 +273,7 @@ func _start_trainer_battle() -> void:
 	# Mark this roaming trainer as defeated regardless of outcome flag below;
 	# the actual win is recorded by the headmaster flow. Here we just battle.
 	GameState.data.defeated_headmasters.append("roaming_" + str(_trainer_cell))
+	_save_position()
 	get_tree().change_scene_to_file(Routes.BATTLE)
 
 
@@ -254,12 +283,12 @@ func _trainer_defeated() -> bool:
 
 # ---------------------------------------------------------------- interact
 func _try_interact() -> void:
-	# Interact when standing next to the town building.
+	# Interact when standing next to the town building. If there's nothing
+	# adjacent to interact with, stay silent and let play continue.
 	for dir in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
 		if _terrain_at(_player_cell + dir) == Terrain.TOWN:
 			_open_town_services()
 			return
-	_say(["There's nothing here right now. Try the tall grass, the pond or the cave to find creatures to scan!"])
 
 
 # ---------------------------------------------------------------- narration

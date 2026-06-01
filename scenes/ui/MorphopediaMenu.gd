@@ -10,6 +10,8 @@ var _root: Control
 var _content: VBoxContainer
 var _first_focus: Control
 var _showing_detail := false
+## Current element-filter index. 0 = All; 1..N = GameData.ELEMENT_IDS[index-1].
+var _filter_index: int = 0
 
 
 func _ready() -> void:
@@ -19,12 +21,38 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Back / close always takes priority.
 	if event.is_action_pressed("cancel") or event.is_action_pressed("open_menu"):
 		get_viewport().set_input_as_handled()
 		if _showing_detail:
 			_show_grid()
 		else:
 			_close()
+		return
+
+	# Shoulder-button / Q-E filter cycling only on the grid view.
+	if _showing_detail:
+		return
+
+	if event is InputEventJoypadButton and event.pressed:
+		if event.button_index == JOY_BUTTON_LEFT_SHOULDER:
+			get_viewport().set_input_as_handled()
+			_cycle_filter(-1)
+			return
+		if event.button_index == JOY_BUTTON_RIGHT_SHOULDER:
+			get_viewport().set_input_as_handled()
+			_cycle_filter(1)
+			return
+
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_Q:
+			get_viewport().set_input_as_handled()
+			_cycle_filter(-1)
+			return
+		if event.keycode == KEY_E:
+			get_viewport().set_input_as_handled()
+			_cycle_filter(1)
+			return
 
 
 func _build_shell() -> void:
@@ -80,9 +108,14 @@ func _show_grid() -> void:
 	var total := GameData.creatures.size()
 	_content.add_child(UI.make_label("Discovered %d / %d species" % [_discovered_count(discovered), total], 18))
 
+	# Filter navigation header row.
+	_content.add_child(_make_filter_header())
+
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(860, 500)
+	scroll.custom_minimum_size = Vector2(860, 400)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Auto-scroll the viewport so the focused card is always visible.
+	scroll.follow_focus = true
 	_content.add_child(scroll)
 
 	var sections := VBoxContainer.new()
@@ -90,7 +123,15 @@ func _show_grid() -> void:
 	sections.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(sections)
 
-	for element_id in GameData.ELEMENT_IDS:
+	# Build the set of element IDs to display based on the active filter.
+	var elements_to_show: Array[StringName] = []
+	if _filter_index == 0:
+		for eid in GameData.ELEMENT_IDS:
+			elements_to_show.append(eid)
+	else:
+		elements_to_show.append(GameData.ELEMENT_IDS[_filter_index - 1])
+
+	for element_id in elements_to_show:
 		var species_list := _species_for_element(element_id)
 		if species_list.is_empty():
 			continue
@@ -116,6 +157,45 @@ func _show_grid() -> void:
 	_button("Back", _close, _first_focus == null)
 	if _first_focus != null:
 		_first_focus.call_deferred("grab_focus")
+
+
+func _cycle_filter(delta: int) -> void:
+	_filter_index = posmod(_filter_index + delta, 1 + GameData.ELEMENT_IDS.size())
+	AudioManager.play_sfx(&"select")
+	_show_grid()
+
+
+## Builds the "◄ Q/LB   <filter name>   RB/E ►" header row shown above the grid.
+func _make_filter_header() -> Control:
+	var center := CenterContainer.new()
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 24)
+	center.add_child(hbox)
+
+	var left_hint := UI.make_label("◄ Q / LB", 18)
+	left_hint.add_theme_color_override("font_color", Color(UI.TEXT, 0.55))
+	hbox.add_child(left_hint)
+
+	var name_label: Label
+	if _filter_index == 0:
+		name_label = UI.make_label("All", 22)
+	else:
+		var eid: StringName = GameData.ELEMENT_IDS[_filter_index - 1]
+		var element: ElementType = GameData.elements.get(eid, null)
+		if element != null:
+			name_label = UI.make_label(element.display_name, 22)
+			name_label.add_theme_color_override("font_color", element.color.lightened(0.1))
+		else:
+			name_label = UI.make_label(String(eid), 22)
+	name_label.custom_minimum_size = Vector2(220, 0)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hbox.add_child(name_label)
+
+	var right_hint := UI.make_label("RB / E ►", 18)
+	right_hint.add_theme_color_override("font_color", Color(UI.TEXT, 0.55))
+	hbox.add_child(right_hint)
+
+	return center
 
 
 func _show_detail(species_id: StringName) -> void:

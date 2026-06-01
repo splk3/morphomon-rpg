@@ -23,6 +23,16 @@ var _message: Label
 var _action_box: VBoxContainer
 var _busy := false
 
+## Playful trash-talk a student/trainer throws out before the fight begins.
+const TRAINER_TAUNTS := [
+	"Hope you studied, rookie — class is in session!",
+	"My Morphomon's been itching for a warm-up. You'll do!",
+	"Nice gadget. Too bad it's about to get scrapped!",
+	"Let's see if you're all talk and no transform!",
+	"They told me you were tough. I don't see it... yet!",
+	"Winner buys lunch — get your wallet ready!",
+]
+
 
 func _ready() -> void:
 	UI.fill_background(self, Color("23304a"))
@@ -36,7 +46,26 @@ func _ready() -> void:
 		get_tree().change_scene_to_file(Routes.OVERWORLD)
 		return
 	_build_ui()
+	_play_intro_transition()
 	_intro()
+
+
+## Brief fade-in from black with a rising fanfare + rumble so every battle —
+## wild, roaming student, or headmaster — opens with a transition.
+func _play_intro_transition() -> void:
+	AudioManager.play_sfx(&"battle_start")
+	Settings.rumble(0.4, 0.6, 0.25)
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+	var cover := ColorRect.new()
+	cover.color = Color(0, 0, 0, 1)
+	cover.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(cover)
+	var tween := create_tween()
+	tween.tween_property(cover, "color:a", 0.0, 0.5)
+	tween.tween_callback(layer.queue_free)
 
 
 func _is_valid_battle() -> bool:
@@ -84,7 +113,7 @@ func _build_ui() -> void:
 	# Message + actions
 	var bottom := PanelContainer.new()
 	bottom.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom.offset_top = -170
+	bottom.offset_top = -190
 	bottom.add_theme_stylebox_override("panel", _panel_box())
 	add_child(bottom)
 	var h := HBoxContainer.new()
@@ -92,14 +121,22 @@ func _build_ui() -> void:
 	bottom.add_child(h)
 
 	_message = UI.make_label("", 22)
-	_message.custom_minimum_size = Vector2(560, 140)
+	_message.custom_minimum_size = Vector2(520, 150)
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(_message)
 
+	# Actions live in a scroll view so long lists (move/essence menus) never
+	# spill below the bottom of the screen — the focused button scrolls in.
+	var action_scroll := ScrollContainer.new()
+	action_scroll.custom_minimum_size = Vector2(250, 158)
+	action_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	h.add_child(action_scroll)
+
 	_action_box = VBoxContainer.new()
 	_action_box.add_theme_constant_override("separation", 8)
-	h.add_child(_action_box)
+	_action_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_scroll.add_child(_action_box)
 
 	_refresh_status()
 
@@ -142,9 +179,11 @@ func _refresh_status() -> void:
 
 # ---------------------------------------------------------------- flow
 func _intro() -> void:
-	var who := "A wild %s appeared!" % _enemy.display_name() if _wild \
-		else "%s wants to battle!" % _trainer_name
-	await _say(who)
+	if _wild:
+		await _say("A wild %s appeared!" % _enemy.display_name())
+	else:
+		await _say("%s wants to battle!" % _trainer_name)
+		await _say("%s: %s" % [_trainer_name, TRAINER_TAUNTS[randi() % TRAINER_TAUNTS.size()]])
 	await _say("Your Morphomon transforms into %s!" % _player.display_name())
 	AudioManager.play_sfx(&"transform")
 	_player_choice()
@@ -187,6 +226,18 @@ func _choose_transform() -> void:
 		if e.current_hp <= 0 or i == GameState.data.morphomon.active_index:
 			btn.disabled = true
 	_add_action("Back", _player_choice)
+	# When every essence button is disabled (e.g. all others are fainted), the
+	# first child can't hold focus — pin focus to a usable button or Back so a
+	# gamepad player is never stuck on the transform menu.
+	_focus_first_enabled()
+
+
+## Moves keyboard/gamepad focus to the first action button that isn't disabled.
+func _focus_first_enabled() -> void:
+	for c in _action_box.get_children():
+		if c is BaseButton and not (c as BaseButton).disabled:
+			c.call_deferred("grab_focus")
+			return
 
 
 # ---------------------------------------------------------------- actions

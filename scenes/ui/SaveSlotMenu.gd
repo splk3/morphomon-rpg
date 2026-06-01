@@ -2,12 +2,25 @@ extends Control
 ## Lets the player pick one of three save slots. Empty slots start a new game;
 ## used slots can be continued or deleted.
 
+var _confirm_overlay: Control = null
+var _confirm_return_focus: Control = null
+
+
 func _ready() -> void:
 	UI.fill_background(self)
 	_build()
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if _confirm_overlay != null and event.is_action_pressed("cancel"):
+		get_viewport().set_input_as_handled()
+		_dismiss_confirm()
+
+
 func _build() -> void:
+	# Clear any lingering confirmation overlay reference when rebuilding.
+	_confirm_overlay = null
+	_confirm_return_focus = null
 	for c in get_children():
 		if c is ColorRect:
 			continue
@@ -79,7 +92,9 @@ func _make_slot_row(slot: int) -> PanelContainer:
 		buttons.add_child(continue_btn)
 		var delete_btn := UI.make_button("Delete")
 		delete_btn.custom_minimum_size = Vector2(200, 36)
-		delete_btn.pressed.connect(_on_delete.bind(slot))
+		delete_btn.pressed.connect(func() -> void:
+			AudioManager.play_sfx(&"select")
+			_show_confirm_dialog(slot, delete_btn))
 		buttons.add_child(delete_btn)
 		focus_target = continue_btn
 
@@ -99,10 +114,78 @@ func _on_continue(slot: int) -> void:
 		get_tree().change_scene_to_file(Routes.OVERWORLD)
 
 
-func _on_delete(slot: int) -> void:
+## Builds and shows a modal confirmation overlay before deleting a slot.
+## [param return_focus] is the button that should regain focus on cancel.
+func _show_confirm_dialog(slot: int, return_focus: Control) -> void:
+	_confirm_return_focus = return_focus
+
+	# Full-rect overlay blocks all mouse/pointer interaction with the slot list.
+	var overlay := Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(overlay)
+	_confirm_overlay = overlay
+
+	var dim := ColorRect.new()
+	dim.color = Color(0.0, 0.0, 0.0, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var panel := UI.make_panel()
+	panel.custom_minimum_size = Vector2(520, 0)
+	center.add_child(panel)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 18)
+	panel.add_child(col)
+
+	col.add_child(UI.make_title("Confirm Delete", 32))
+
+	var msg := UI.make_label("Delete Slot %d?  This cannot be undone." % (slot + 1), 20)
+	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(msg)
+
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 16)
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(btn_row)
+
+	var confirm_btn := UI.make_button("Delete")
+	confirm_btn.custom_minimum_size = Vector2(200, 48)
+	confirm_btn.pressed.connect(func() -> void:
+		AudioManager.play_sfx(&"confirm")
+		_confirm_overlay = null
+		_confirm_return_focus = null
+		overlay.queue_free()
+		SaveManager.delete_slot(slot)
+		_build())
+	btn_row.add_child(confirm_btn)
+
+	var cancel_btn := UI.make_button("Cancel")
+	cancel_btn.custom_minimum_size = Vector2(200, 48)
+	cancel_btn.pressed.connect(func() -> void:
+		_dismiss_confirm())
+	btn_row.add_child(cancel_btn)
+
+	# Default focus on the safe "Cancel" button.
+	cancel_btn.call_deferred("grab_focus")
+
+
+## Dismisses the confirmation dialog and restores focus to the triggering button.
+func _dismiss_confirm() -> void:
 	AudioManager.play_sfx(&"cancel")
-	SaveManager.delete_slot(slot)
-	_build()
+	if is_instance_valid(_confirm_overlay):
+		_confirm_overlay.queue_free()
+	_confirm_overlay = null
+	if is_instance_valid(_confirm_return_focus):
+		_confirm_return_focus.grab_focus()
+	_confirm_return_focus = null
 
 
 func _format_time(seconds: float) -> String:

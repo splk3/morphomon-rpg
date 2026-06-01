@@ -100,8 +100,12 @@ func attempt_scan(species_id: StringName, creature_level: int, hp_ratio: float) 
 	var active := data.morphomon.active_essence()
 	var our_level := active.level if active != null else 5
 	var weakened := 1.0 - clampf(hp_ratio, 0.0, 1.0)          # 0..1, higher when hurt
-	var level_factor := clampf(float(our_level) / float(maxi(1, creature_level)), 0.4, 1.6)
-	var chance := clampf((0.25 + 0.55 * weakened) * level_factor * (1.0 - species.scan_resistance) + 0.1, 0.05, 0.95)
+	# Low HP ramps the capture odds up sharply: pow(<1) rises fast as the
+	# creature is worn down, so a near-fainted target is almost always caught
+	# while a full-health one stays a long shot.
+	var low_hp_bonus := pow(weakened, 0.6)
+	var level_factor := clampf(float(our_level) / float(maxi(1, creature_level)), 0.5, 1.6)
+	var chance := clampf((0.15 + 0.85 * low_hp_bonus) * level_factor * (1.0 - species.scan_resistance) + 0.08, 0.05, 0.97)
 	var success := randf() < chance
 	if success:
 		_store_scanned_essence(species_id, creature_level)

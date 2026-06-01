@@ -103,6 +103,13 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _active:
 		return
+	if event.is_action_pressed("cancel") or event.is_action_pressed("ui_cancel"):
+		# Cancel/back dismisses the whole conversation without advancing.
+		get_viewport().set_input_as_handled()
+		AudioManager.play_sfx(&"cancel")
+		hide_bubble()
+		finished.emit()
+		return
 	if event.is_action_pressed("interact") or event.is_action_pressed("ui_accept"):
 		get_viewport().set_input_as_handled()
 		if _label.visible_characters < _label.get_total_character_count():
